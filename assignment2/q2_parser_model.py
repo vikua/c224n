@@ -22,7 +22,7 @@ class Config(object):
     embed_size = 50
     hidden_size = 500
     batch_size = 1024
-    n_epochs = 20
+    n_epochs = 15
     lr = 0.0005
 
 
@@ -290,5 +290,5 @@ def main(debug=True):
 
 
 if __name__ == '__main__':
-    main(debug=True)
+    main(debug=False)
 
