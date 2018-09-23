@@ -27,7 +27,7 @@ logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
 
 class Config:
     """Holds model hyperparams and data information.
-
+    shape
     The config class is used to store various hyperparameters and dataset
     information parameters. Model objects are passed a Config() object at
     instantiation.
@@ -37,7 +37,7 @@ class Config:
     n_word_features = 2 # Number of features for every word in the input.
     window_size = 1 # The size of the window to use.
     ### YOUR CODE HERE
-    n_window_features = 0 # The total number of features used for each window.
+    n_window_features = (2 * window_size + 1) * n_word_features # The total number of features used for each window.
     ### END YOUR CODE
     n_classes = 5
     dropout = 0.5
@@ -97,6 +97,17 @@ def make_windowed_data(data, start, end, window_size = 1):
     windowed_data = []
     for sentence, labels in data:
 		### YOUR CODE HERE (5-20 lines)
+        for i in range(len(sentence)):
+            window = []
+            for j in range(i - window_size, i + window_size + 1): 
+                if j < 0: 
+                    token = start
+                elif j >= len(sentence): 
+                    token = end
+                else: 
+                    token = sentence[j]
+                window = window + token
+            windowed_data.append((window, labels[i]))
 
 		### END YOUR CODE
     return windowed_data
@@ -130,7 +141,13 @@ class WindowModel(NERModel):
         (Don't change the variable names)
         """
         ### YOUR CODE HERE (~3-5 lines)
-
+        self.input_placeholder = tf.placeholder(tf.int32, 
+                                                [None, Config.n_window_features],
+                                                'inputs') 
+        self.labels_placeholder = tf.placeholder(tf.int32, 
+                                                 [None,], 
+                                                 'labels')
+        self.dropout_placeholder = tf.placeholder(tf.float32, shape=(), name='dropout')
         ### END YOUR CODE
 
     def create_feed_dict(self, inputs_batch, labels_batch=None, dropout=1):
@@ -153,7 +170,12 @@ class WindowModel(NERModel):
             feed_dict: The feed dictionary mapping from placeholders to values.
         """
         ### YOUR CODE HERE (~5-10 lines)
-         
+        feed_dict = {
+            self.input_placeholder: inputs_batch,
+            self.dropout_placeholder: dropout,
+        }
+        if labels_batch is not None: 
+            feed_dict[self.labels_placeholder] = labels_batch
         ### END YOUR CODE
         return feed_dict
 
@@ -174,9 +196,10 @@ class WindowModel(NERModel):
             embeddings: tf.Tensor of shape (None, n_window_features*embed_size)
         """
         ### YOUR CODE HERE (!3-5 lines)
-                                                             
-                                  
-                                                                                                                 
+        with tf.variable_scope('embeddings'): 
+            embeddings_matrix = tf.Variable(self.pretrained_embeddings)
+            embed_seq = tf.nn.embedding_lookup(embeddings_matrix, self.input_placeholder)
+            embeddings = tf.reshape(embed_seq, [-1, Config.n_window_features * Config.embed_size])
         ### END YOUR CODE
         return embeddings
 
@@ -207,6 +230,23 @@ class WindowModel(NERModel):
         x = self.add_embedding()
         dropout_rate = self.dropout_placeholder
         ### YOUR CODE HERE (~10-20 lines)
+        with tf.variable_scope('dense'): 
+            W = tf.get_variable(
+                'weights', shape=[Config.n_window_features * Config.embed_size, Config.hidden_size], 
+                initializer =tf.contrib.layers.xavier_initializer())
+            b = tf.get_variable('biasses', shape=[Config.hidden_size,], 
+                                initializer=tf.zeros_initializer())
+            h = tf.matmul(x, W) + b
+            h = tf.nn.relu(h)
+            h_drop = tf.nn.dropout(h, self.dropout_placeholder)
+
+        with tf.variable_scope('prediction'): 
+            W = tf.get_variable(
+                'weights', shape=[Config.hidden_size, Config.n_classes],
+                initializer=tf.contrib.layers.xavier_initializer())
+            b = tf.get_variable('biasses', shape=[Config.n_classes,], 
+                                    initializer=tf.zeros_initializer())
+            pred = tf.matmul(h_drop, W) + b
 
         ### END YOUR CODE
         return pred
@@ -225,7 +265,10 @@ class WindowModel(NERModel):
             loss: A 0-d tensor (scalar)
         """
         ### YOUR CODE HERE (~2-5 lines)
-                                   
+        loss = tf.reduce_mean(
+            tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.labels_placeholder, 
+                                                           logits=pred)
+        )
         ### END YOUR CODE
         return loss
 
@@ -249,7 +292,8 @@ class WindowModel(NERModel):
             train_op: The Op for training.
         """
         ### YOUR CODE HERE (~1-2 lines)
-
+        optimizer = tf.train.AdamOptimizer(Config.lr)
+        train_op = optimizer.minimize(loss)
         ### END YOUR CODE
         return train_op
 
